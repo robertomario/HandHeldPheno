@@ -4,23 +4,52 @@ Created on Mon Jun 24 18:36:56 2019
 
 @author: ROBERTO MARIO
 """
-
+import os
 import wx
 import sys
 import glob
 import time
 import serial
+import os.path
 import pynmea2
 import datetime
+
+from threading import Timer
+
+class RepeatedTimer(object):
+    def __init__(self, interval, function, *args, **kwargs):
+        self._timer     = None
+        self.interval   = interval
+        self.function   = function
+        self.args       = args
+        self.kwargs     = kwargs
+        self.is_running = False
+        self.start()
+
+    def _run(self):
+        self.is_running = False
+        self.start()
+        self.function(*self.args, **self.kwargs)
+
+    def start(self):
+        if not self.is_running:
+            self._timer = Timer(self.interval, self._run)
+            self._timer.start()
+            self.is_running = True
+
+    def stop(self):
+        self._timer.cancel()
+        self.is_running = False
 
 class PreferencesDialog(wx.Dialog):
     
     def __init__(self, settings, *args, **kw):
         super(PreferencesDialog, self).__init__(*args, **kw)
+        self.settings=settings
         self.InitUI()
         self.SetSize((650, 300))
         self.SetTitle('Preferences')
-        self.settings=settings
+        
         
     def InitUI(self):
         ports=['']+self.GetSerialPorts()
@@ -56,12 +85,36 @@ class PreferencesDialog(wx.Dialog):
         self.cb3=wx.ComboBox(pnl, choices=ports)
         hbox3.Add(self.cb3, proportion=1, flag=wx.ALL|wx.EXPAND)
         
+        if(self.settings.Exists('multispectralConnected')):
+            self.chb1.SetValue(self.settings.ReadBool('multispectralConnected'))
+            if(self.chb1.GetValue()):
+                self.cb1.Enable(True)
+            else:
+                self.cb1.Enable(False)
+            self.chb2.SetValue(self.settings.ReadBool('ultrasonicConnected'))
+            if(self.chb2.GetValue()):
+                self.cb2.Enable(True)
+            else:
+                self.cb2.Enable(False)
+            self.chb3.SetValue(self.settings.ReadBool('GPSConnected'))
+            if(self.chb3.GetValue()):
+                self.cb3.Enable(True)
+            else:
+                self.cb3.Enable(False)
+        else:
+            self.chb1.SetValue(False)
+            self.cb1.Enable(False)
+            self.chb2.SetValue(False)
+            self.cb2.Enable(False)
+            self.chb3.SetValue(False)
+            self.cb3.Enable(False)
+            
         hbox4 = wx.BoxSizer(wx.HORIZONTAL)
         okButton = wx.Button(self, label='OK')
         cancelButton = wx.Button(self, label='Cancel')
         hbox4.Add(okButton)
         hbox4.Add(cancelButton, flag=wx.LEFT, border=5)
-        okButton.Bind(wx.EVT_BUTTON, self.OnSave)
+        okButton.Bind(wx.EVT_BUTTON, self.OnOK)
         cancelButton.Bind(wx.EVT_BUTTON, self.OnCancel)
         
         vbox2.Add(hbox1, proportion=1, flag=wx.ALIGN_CENTER|wx.TOP|wx.BOTTOM|wx.EXPAND, border=10)
@@ -73,7 +126,7 @@ class PreferencesDialog(wx.Dialog):
         vbox1.Add(hbox4, proportion=0, flag=wx.ALIGN_CENTER|wx.ALL, border=10)
         self.SetSizer(vbox1)
         
-    def OnSave(self, e):
+    def OnOK(self, e):
         self.settings.WriteBool('multispectralConnected', self.chb1.GetValue())
         self.settings.Write('multispectralPort', self.cb1.GetStringSelection())
         self.settings.WriteBool('ultrasonicConnected', self.chb2.GetValue())
@@ -140,10 +193,10 @@ class PreferencesDialog(wx.Dialog):
                 pass
         return result
     
-class Example(wx.Frame):
+class MainWindow(wx.Frame):
 
     def __init__(self, *args, **kwargs):
-        super(Example, self).__init__(*args, **kwargs)
+        super(MainWindow, self).__init__(*args, **kwargs)
         self.cfg = wx.Config('HHPconfig')
         if not self.cfg.Exists('multispectralConnected'):
             self.cfg.WriteBool('multispectralConnected', False)
@@ -158,8 +211,12 @@ class Example(wx.Frame):
         menubar = wx.MenuBar()
                 
         fileMenu = wx.Menu()
-        fileMenu.Append(wx.ID_NEW, '&New')
-        fileMenu.Append(wx.ID_SAVE, '&Save')
+        newmi = wx.MenuItem(fileMenu, wx.ID_NEW, '&New')
+        fileMenu.Append(newmi)
+        self.Bind(wx.EVT_MENU, self.OnNew, newmi)
+        savemi = wx.MenuItem(fileMenu, wx.ID_SAVE, '&Save')
+        fileMenu.Append(savemi)
+        self.Bind(wx.EVT_MENU, self.OnSave, savemi)
         fileMenu.AppendSeparator()
         qmi = wx.MenuItem(fileMenu, wx.ID_EXIT, '&Quit')
         fileMenu.AppendItem(qmi)
@@ -229,7 +286,20 @@ class Example(wx.Frame):
         self.SetSize((1000, 850))
         self.SetTitle('HandHeld Plant Phenotyping')
         self.Centre()
-
+        
+        
+    def OnNew(self, e):
+        self.logText.SetValue('')
+    
+    def OnSave(self, e):
+        rootName='HHPLogFile'+datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d')+'X'
+        i=1
+        while(os.path.isfile(rootName+str(i)+'.txt')):
+            i+=1
+        finalFilename=rootName+str(i)+'.txt'
+        self.logText.SaveFile(finalFilename)
+        self.logText.SetValue('')
+        
     def OnQuit(self, e):
         self.Close()
         
@@ -242,10 +312,13 @@ class Example(wx.Frame):
         dial.Show()
     
     def OnPreferences(self, e):
+        print(self.cfg.ReadBool('multispectralConnected'))
         pDialog = PreferencesDialog(self.cfg, self)
         dialogFlag=pDialog.ShowModal()
+        print(dialogFlag)
         if(dialogFlag==wx.ID_OK):
             results=pDialog.GetSettings()
+            print(results.ReadBool('multispectralConnected'))
             self.cfg.WriteBool('multispectralConnected', results.ReadBool('multispectralConnected'))
             self.cfg.Write('multispectralPort', results.Read('multispectralPort'))
             self.cfg.WriteBool('ultrasonicConnected', results.ReadBool('ultrasonicConnected'))
@@ -255,10 +328,27 @@ class Example(wx.Frame):
         pDialog.Destroy()
         
     def OnStart(self, e):
-        #createThread(freq, OnMeasure)
-        pass
+        self.rt = RepeatedTimer(1, self.sayHi)
     
     def OnMeasure(self, e):
+        self.readAll()
+            
+    def OnErase(self, e):
+        if(self.logText.GetValue()!=''):
+            latestLineLength=self.logText.GetLineLength(self.logText.GetNumberOfLines()-2)
+            print(latestLineLength)
+            lastPosition=self.logText.GetLastPosition()
+            print(lastPosition)
+            self.logText.Remove(lastPosition-latestLineLength-2, lastPosition)
+        
+    def OnStop(self, e):
+        self.rt.stop()
+    
+    #for debugging the OnStart method
+    def sayHi(self):
+        self.logText.AppendText('Hi, Roberto \n')
+    
+    def readAll(self):
         if(self.cfg.ReadBool('multispectralConnected')):
             mr=self.getMultispectralReading()
             self.updateUI(mr)
@@ -270,16 +360,6 @@ class Example(wx.Frame):
             self.updateUI(gr)
             #updateMap(gr)
             
-    def OnErase(self, e):
-        if(self.logText.GetValue()!=''):
-            latestLineLength=self.logText.GetLineLength(self.logText.GetNumberOfLines()-1)
-            lastPosition=self.logText.GetLastPosition()
-            self.logText.Remove(lastPosition-latestLineLength, lastPosition)
-        
-    def OnStop(self, e):
-        #killThread(all)
-        pass
-    
     def getMultispectralReading(self, numValues=10):
         try:
             serialCropCircle=serial.Serial(self.cfg.Read('multispectralPort'),38400)
@@ -352,20 +432,20 @@ class Example(wx.Frame):
             if(isinstance(someValue, list)):
                 if(len(someValue)>=5):
                     #cropCircle
-                    self.logText.AppendText("m;"+ts+";"+str(someValue)[1,-1])
+                    self.logText.AppendText('m;'+ts+';'+str(someValue)[1,-1]+'\n')
                 else:
                     #gps
-                    self.logText.AppendText("g;"+ts+";"+str(someValue)[1,-1])
+                    self.logText.AppendText('g;'+ts+';'+str(someValue)[1,-1]+'\n')
             else:
                 #ultrasonic
-                self.logText.AppendText("m;"+ts+";"+str(someValue))
+                self.logText.AppendText('m;'+ts+';'+str(someValue)+'\n')
         else:
             #None
             pass
     
 def main():
     app = wx.App()
-    ex = Example(None)
+    ex = MainWindow(None)
     ex.Show()
     app.MainLoop()
 

@@ -43,9 +43,11 @@ class MainWindow(wx.Frame):
         self.panel = wx.Panel(self)
         self.button = wx.Button(self.panel, label="Show settings")
         self.button.Bind(wx.EVT_BUTTON, self.onSettings)
-
+        self.logText = wx.TextCtrl(self.panel, style=wx.TE_MULTILINE|wx.TE_READONLY)
+        self.logText.SetValue('Good morning\n')
         self.sizer = wx.BoxSizer()
         self.sizer.Add(self.button)
+        self.sizer.Add(self.logText)
 
         self.panel.SetSizerAndFit(self.sizer)  
         self.Show()
@@ -53,12 +55,15 @@ class MainWindow(wx.Frame):
         self.settings = [False, False, False]
 
     def onSettings(self, e):
+        self.logText.AppendText('Thank you')
         settings_dialog = Settings(self.settings, self)
         res = settings_dialog.ShowModal()
         if res == wx.ID_OK:
+            self.logText.SaveFile('logTest'+str(4)+'.txt')
+            self.logText.SetValue('')
             self.settings = settings_dialog.GetSettings()
         settings_dialog.Destroy()
 
-app = wx.App(False)
+app = wx.App()
 win = MainWindow(None)
 app.MainLoop()
