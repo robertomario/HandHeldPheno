@@ -89,16 +89,19 @@ class PreferencesDialog(wx.Dialog):
             self.chb1.SetValue(self.settings.ReadBool('multispectralConnected'))
             if(self.chb1.GetValue()):
                 self.cb1.Enable(True)
+                self.cb1.SetValue(self.settings.Read('multispectralPort'))
             else:
                 self.cb1.Enable(False)
             self.chb2.SetValue(self.settings.ReadBool('ultrasonicConnected'))
             if(self.chb2.GetValue()):
                 self.cb2.Enable(True)
+                self.cb2.SetValue(self.settings.Read('ultrasonicPort'))
             else:
                 self.cb2.Enable(False)
             self.chb3.SetValue(self.settings.ReadBool('GPSConnected'))
             if(self.chb3.GetValue()):
                 self.cb3.Enable(True)
+                self.cb3.SetValue(self.settings.Read('GPSPort'))
             else:
                 self.cb3.Enable(False)
         else:
@@ -312,13 +315,10 @@ class MainWindow(wx.Frame):
         dial.Show()
     
     def OnPreferences(self, e):
-        print(self.cfg.ReadBool('multispectralConnected'))
         pDialog = PreferencesDialog(self.cfg, self)
         dialogFlag=pDialog.ShowModal()
-        print(dialogFlag)
         if(dialogFlag==wx.ID_OK):
             results=pDialog.GetSettings()
-            print(results.ReadBool('multispectralConnected'))
             self.cfg.WriteBool('multispectralConnected', results.ReadBool('multispectralConnected'))
             self.cfg.Write('multispectralPort', results.Read('multispectralPort'))
             self.cfg.WriteBool('ultrasonicConnected', results.ReadBool('ultrasonicConnected'))
@@ -336,9 +336,7 @@ class MainWindow(wx.Frame):
     def OnErase(self, e):
         if(self.logText.GetValue()!=''):
             latestLineLength=self.logText.GetLineLength(self.logText.GetNumberOfLines()-2)
-            print(latestLineLength)
             lastPosition=self.logText.GetLastPosition()
-            print(lastPosition)
             self.logText.Remove(lastPosition-latestLineLength-2, lastPosition)
         
     def OnStop(self, e):
@@ -377,13 +375,13 @@ class MainWindow(wx.Frame):
                 nir+=measurements[2]
                 ndvi+=measurements[3]
                 ndre+=measurements[4]
-                #print(message)
             finalMeasurement=[sum(red),sum(redEdge),sum(nir),sum(ndvi),sum(ndre)]
-            finalMeasurement=[i/numValues for i in finalMeasurement]
-            serialCropCircle.close()
+            finalMeasurement=[i/numValues for i in finalMeasurement]            
             return finalMeasurement
         except Exception as e:
             pass
+        finally:
+            serialCropCircle.close()
         
     def getUltrasonicReading(self, numValues=10):
         try:
@@ -395,7 +393,6 @@ class MainWindow(wx.Frame):
             charList=[b'0',b'0',b'0',b'0',b'0']
             while(count<numValues):
                 newChar=serialUltrasonic.read()
-                #print(newChar)
                 if(newChar==b'\r'):
                     count+=1
                     message=b''.join(charList)
@@ -408,11 +405,11 @@ class MainWindow(wx.Frame):
                     index+=1
                     if(index>5):
                         index=0
-                        print("Something happened")
-            return finalMeasurement/numValues
-            serialUltrasonic.close()
+            return finalMeasurement/numValues            
         except Exception as e:
             pass
+        finally:
+            serialUltrasonic.close()
         
     def getGPSReading(self, numValues=15):
         try:
@@ -425,9 +422,10 @@ class MainWindow(wx.Frame):
                     parsedMessage=pynmea2.parse(message)
                     finalMeasurement=[parsedMessage.longitude, parsedMessage.latitude]
             return finalMeasurement
-            serialGPS.close()
         except Exception as e:
             pass
+        finally:
+            serialGPS.close()
         
     def updateUI(self, someValue):
         if(someValue!=None):
