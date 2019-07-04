@@ -283,7 +283,7 @@ class MainWindow(wx.Frame):
         outerBox.Add(rightBox, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         backgroundPanel.SetSizer(outerBox)
         
-        self.SetSize((1000, 850))
+        self.SetSize((1005, 650))
         self.SetTitle('HandHeld Plant Phenotyping')
         self.Centre()
         
