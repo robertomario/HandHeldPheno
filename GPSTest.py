@@ -9,9 +9,13 @@ import serial
 import pynmea2
 
 serialCropCircle=serial.Serial('COM13',9600)
-for i in range(10):
-    message=serialCropCircle.readline().strip()
-    parsedMessage=pynmea2.parse(message)
-    print(parsedMessage.longitude)
-    print(parsedMessage.latitude)
+i=0
+while(i<10):
+    message=serialCropCircle.readline().strip().decode()
+    print(message)
+    if(message[0:6]=='$GPGGA' or message[0:6]=='$GPGLL'):
+        i+=1
+        parsedMessage=pynmea2.parse(message)
+        print(parsedMessage.lon)
+        print(parsedMessage.lat)
 serialCropCircle.close()
