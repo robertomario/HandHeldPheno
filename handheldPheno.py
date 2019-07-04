@@ -159,7 +159,6 @@ class Example(wx.Frame):
                 
         fileMenu = wx.Menu()
         fileMenu.Append(wx.ID_NEW, '&New')
-        fileMenu.Append(wx.ID_OPEN, '&Open')
         fileMenu.Append(wx.ID_SAVE, '&Save')
         fileMenu.AppendSeparator()
         qmi = wx.MenuItem(fileMenu, wx.ID_EXIT, '&Quit')
@@ -210,14 +209,17 @@ class Example(wx.Frame):
         panel4.SetBackgroundColour('#000049')
         btn1 = wx.Button(backgroundPanel, label='Start')
         btn2 = wx.Button(backgroundPanel, label='Measure')
-        btn3 = wx.Button(backgroundPanel, label='Stop')
+        btn3 = wx.Button(backgroundPanel, label='Erase')
+        btn4 = wx.Button(backgroundPanel, label='Stop')
         btn1.Bind(wx.EVT_BUTTON, self.OnStart)
         btn2.Bind(wx.EVT_BUTTON, self.OnMeasure)
-        btn3.Bind(wx.EVT_BUTTON, self.OnStop)
-        rightBox.Add(panel4, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
-        rightBox.Add(btn1, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
-        rightBox.Add(btn2, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
-        rightBox.Add(btn3, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
+        btn3.Bind(wx.EVT_BUTTON, self.OnErase)
+        btn4.Bind(wx.EVT_BUTTON, self.OnStop)
+        rightBox.Add(panel4, proportion=3, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(btn1, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(btn2, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(btn3, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(btn4, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
                            
         outerBox.Add(leftBox, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         outerBox.Add(middleBox, proportion=2, flag=wx.EXPAND | wx.ALL, border=20)
@@ -225,14 +227,14 @@ class Example(wx.Frame):
         backgroundPanel.SetSizer(outerBox)
         
         self.SetSize((1000, 850))
-        self.SetTitle('Plant data collector')
+        self.SetTitle('HandHeld Plant Phenotyping')
         self.Centre()
 
     def OnQuit(self, e):
         self.Close()
         
     def OnAbout(self, e):
-        dial = wx.MessageBox(("Plant data collector \n"
+        dial = wx.MessageBox(("HandHeld Plant Phenotyping \n"
                              "Made by Roberto Buelvas\n"
                              "McGill University, 2019\n"
                              "Version 0.01\n"),
@@ -267,6 +269,12 @@ class Example(wx.Frame):
             gr=self.getGPSReading()
             self.updateUI(gr)
             #updateMap(gr)
+            
+    def OnErase(self, e):
+        if(self.logText.GetValue()!=''):
+            latestLineLength=self.logText.GetLineLength(self.logText.GetNumberOfLines()-1)
+            lastPosition=self.logText.GetLastPosition()
+            self.logText.Remove(lastPosition-latestLineLength, lastPosition)
         
     def OnStop(self, e):
         #killThread(all)
