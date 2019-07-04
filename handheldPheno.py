@@ -283,7 +283,7 @@ class MainWindow(wx.Frame):
         outerBox.Add(rightBox, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         backgroundPanel.SetSizer(outerBox)
         
-        self.SetSize((1005, 650))
+        self.Maximize()
         self.SetTitle('HandHeld Plant Phenotyping')
         self.Centre()
         
@@ -417,10 +417,13 @@ class MainWindow(wx.Frame):
     def getGPSReading(self, numValues=15):
         try:
             serialGPS=serial.Serial(self.cfg.Read('GPSPort'),9600)
-            for i in range(numValues):
-                message=serialGPS.readline().strip()
-                parsedMessage=pynmea2.parse(message)
-            finalMeasurement = [parsedMessage.longitude,parsedMessage.latitude]
+            i=0
+            while(i<10):
+                message=serialGPS.readline().strip().decode()
+                if(message[0:6]=='$GPGGA' or message[0:6]=='$GPGLL'):
+                    i+=1
+                    parsedMessage=pynmea2.parse(message)
+                    finalMeasurement=[parsedMessage.longitude, parsedMessage.latitude]
             return finalMeasurement
             serialGPS.close()
         except Exception as e:
