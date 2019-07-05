@@ -13,8 +13,10 @@ import serial
 import os.path
 import pynmea2
 import datetime
-
+import matplotlib as mpl
 from threading import Timer
+import wx.lib.agw.aui as aui
+from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 
 class RepeatedTimer(object):
     def __init__(self, interval, function, *args, **kwargs):
@@ -195,6 +197,32 @@ class PreferencesDialog(wx.Dialog):
             except (OSError, serial.SerialException):
                 pass
         return result
+
+class Plot(wx.Panel):
+    def __init__(self, parent, id=-1, dpi=None, **kwargs):
+        wx.Panel.__init__(self, parent, id=id, **kwargs)
+        self.figure = mpl.figure.Figure(dpi=dpi, figsize=(2, 2))
+        self.canvas = FigureCanvas(self, -1, self.figure)
+        self.toolbar = NavigationToolbar(self.canvas)
+        self.toolbar.Realize()
+
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        sizer.Add(self.canvas, 1, wx.EXPAND)
+        sizer.Add(self.toolbar, 0, wx.LEFT | wx.EXPAND)
+        self.SetSizer(sizer)
+
+class PlotNotebook(wx.Panel):
+    def __init__(self, parent, id=-1):
+        wx.Panel.__init__(self, parent, id=id)
+        self.nb = aui.AuiNotebook(self)
+        sizer = wx.BoxSizer()
+        sizer.Add(self.nb, 1, wx.EXPAND)
+        self.SetSizer(sizer)
+
+    def add(self, name="plot"):
+        page = Plot(self.nb)
+        self.nb.AddPage(page, name)
+        return page.figure
     
 class MainWindow(wx.Frame):
 
@@ -260,9 +288,13 @@ class MainWindow(wx.Frame):
         leftBox.Add(self.logText, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
         
         middleBox = wx.BoxSizer(wx.VERTICAL)
+        st3 = wx.StaticText(backgroundPanel, label='Plot:')
+        self.plotSelector = wx.ComboBox(backgroundPanel, choices=['Red','Red-Edge','NIR','NDVI','NDRE','Distance'])
         panel3 = wx.Panel(backgroundPanel)
         panel3.SetBackgroundColour('#005000')
-        middleBox.Add(panel3, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
+        middleBox.Add(st3, proportion=0, flag=wx.ALL)
+        middleBox.Add(self.plotSelector, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        middleBox.Add(panel3, proportion=7, flag=wx.EXPAND | wx.ALL, border=20)
         
         rightBox = wx.BoxSizer(wx.VERTICAL)
         panel4 = wx.Panel(backgroundPanel)
@@ -359,73 +391,64 @@ class MainWindow(wx.Frame):
             #updateMap(gr)
             
     def getMultispectralReading(self, numValues=10):
-        try:
-            serialCropCircle=serial.Serial(self.cfg.Read('multispectralPort'),38400)
-            red=[]
-            redEdge=[]
-            nir=[]
-            ndvi=[]
-            ndre=[]
-            for i in range(numValues):
-                message=serialCropCircle.readline().strip()
-                measurements=message.split(',')
-                measurements=[float(i) for i in measurements]
-                red+=measurements[0]
-                redEdge+=measurements[1]
-                nir+=measurements[2]
-                ndvi+=measurements[3]
-                ndre+=measurements[4]
-            finalMeasurement=[sum(red),sum(redEdge),sum(nir),sum(ndvi),sum(ndre)]
-            finalMeasurement=[i/numValues for i in finalMeasurement]            
-            return finalMeasurement
-        except Exception as e:
-            pass
-        finally:
-            serialCropCircle.close()
+        port=self.cfg.Read('multispectralPort')
+        print(port)
+        serialCropCircle=serial.Serial(port,38400)
+        red=[]
+        redEdge=[]
+        nir=[]
+        ndvi=[]
+        ndre=[]
+        for i in range(numValues):
+            message=serialCropCircle.readline().strip().decode()
+            measurements=message.split(',')
+            measurements=[float(i) for i in measurements]
+            red.append(measurements[0])
+            redEdge.append(measurements[1])
+            nir.append(measurements[2])
+            ndvi.append(measurements[3])
+            ndre.append(measurements[4])
+        finalMeasurement=[sum(red),sum(redEdge),sum(nir),sum(ndvi),sum(ndre)]
+        finalMeasurement=[i/numValues for i in finalMeasurement]            
+        serialCropCircle.close()
+        print(finalMeasurement)
+        return finalMeasurement
         
     def getUltrasonicReading(self, numValues=10):
-        try:
-            serialUltrasonic=serial.Serial(self.cfg.Read('ultrasonicPort'),38400)
-            count=-1
-            finalMeasurement=0
-            index=0
-            message=b''
-            charList=[b'0',b'0',b'0',b'0',b'0']
-            while(count<numValues):
-                newChar=serialUltrasonic.read()
-                if(newChar==b'\r'):
-                    count+=1
-                    message=b''.join(charList)
-                    measurement=0.003384*25.4*int(message)
-                    finalMeasurement+=measurement
-                    message=b''
+        serialUltrasonic=serial.Serial(self.cfg.Read('ultrasonicPort'),38400)
+        count=-1
+        finalMeasurement=0
+        index=0
+        message=b''
+        charList=[b'0',b'0',b'0',b'0',b'0']
+        while(count<numValues):
+            newChar=serialUltrasonic.read()
+            if(newChar==b'\r'):
+                count+=1
+                message=b''.join(charList)
+                measurement=0.003384*25.4*int(message)
+                finalMeasurement+=measurement
+                message=b''
+                index=0
+            else:
+                charList[index]=newChar
+                index+=1
+                if(index>5):
                     index=0
-                else:
-                    charList[index]=newChar
-                    index+=1
-                    if(index>5):
-                        index=0
-            return finalMeasurement/numValues            
-        except Exception as e:
-            pass
-        finally:
-            serialUltrasonic.close()
+        serialUltrasonic.close()
+        return finalMeasurement/numValues            
         
     def getGPSReading(self, numValues=15):
-        try:
-            serialGPS=serial.Serial(self.cfg.Read('GPSPort'),9600)
-            i=0
-            while(i<10):
-                message=serialGPS.readline().strip().decode()
-                if(message[0:6]=='$GPGGA' or message[0:6]=='$GPGLL'):
-                    i+=1
-                    parsedMessage=pynmea2.parse(message)
-                    finalMeasurement=[parsedMessage.longitude, parsedMessage.latitude]
-            return finalMeasurement
-        except Exception as e:
-            pass
-        finally:
-            serialGPS.close()
+        serialGPS=serial.Serial(self.cfg.Read('GPSPort'),9600)
+        i=0
+        while(i<10):
+            message=serialGPS.readline().strip().decode()
+            if(message[0:6]=='$GPGGA' or message[0:6]=='$GPGLL'):
+                i+=1
+                parsedMessage=pynmea2.parse(message)
+                finalMeasurement=[parsedMessage.longitude, parsedMessage.latitude]
+        serialGPS.close()
+        return finalMeasurement
         
     def updateUI(self, someValue):
         if(someValue!=None):
@@ -433,10 +456,10 @@ class MainWindow(wx.Frame):
             if(isinstance(someValue, list)):
                 if(len(someValue)>=5):
                     #cropCircle
-                    self.logText.AppendText('m;'+ts+';'+str(someValue)[1,-1]+'\n')
+                    self.logText.AppendText('m;'+ts+';'+str(someValue)[1:-1]+'\n')
                 else:
                     #gps
-                    self.logText.AppendText('g;'+ts+';'+str(someValue)[1,-1]+'\n')
+                    self.logText.AppendText('g;'+ts+';'+str(someValue)[1:-1]+'\n')
             else:
                 #ultrasonic
                 self.logText.AppendText('m;'+ts+';'+str(someValue)+'\n')
