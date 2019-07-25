@@ -13,8 +13,10 @@ import serial
 import os.path
 import pynmea2
 import datetime
-
+import matplotlib as mpl
 from threading import Timer
+import wx.lib.agw.aui as aui
+from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 
 class RepeatedTimer(object):
     def __init__(self, interval, function, *args, **kwargs):
@@ -131,11 +133,11 @@ class PreferencesDialog(wx.Dialog):
         
     def OnOK(self, e):
         self.settings.WriteBool('multispectralConnected', self.chb1.GetValue())
-        self.settings.Write('multispectralPort', self.cb1.GetStringSelection())
+        self.settings.Write('multispectralPort', self.cb1.GetValue())
         self.settings.WriteBool('ultrasonicConnected', self.chb2.GetValue())
-        self.settings.Write('ultrasonicPort', self.cb2.GetStringSelection())
+        self.settings.Write('ultrasonicPort', self.cb2.GetValue())
         self.settings.WriteBool('GPSConnected', self.chb3.GetValue())
-        self.settings.Write('GPSPort', self.cb3.GetStringSelection())
+        self.settings.Write('GPSPort', self.cb3.GetValue())
         self.EndModal(wx.ID_OK)
         #self.Destroy()
     
@@ -168,7 +170,7 @@ class PreferencesDialog(wx.Dialog):
         return self.settings
     
     #https://stackoverflow.com/questions/12090503/listing-available-com-ports-with-python
-    def GetSerialPorts(self, maxNum=30):
+    def GetSerialPorts(self, maxNum=20):
         """ Lists serial port names
     
             :raises EnvironmentError:
@@ -195,6 +197,29 @@ class PreferencesDialog(wx.Dialog):
             except (OSError, serial.SerialException):
                 pass
         return result
+
+class Plot(wx.Panel):
+    def __init__(self, parent, id=-1, dpi=None, **kwargs):
+        wx.Panel.__init__(self, parent, id=id, **kwargs)
+        self.figure = mpl.figure.Figure(dpi=dpi, figsize=(2, 2))
+        self.canvas = FigureCanvas(self, -1, self.figure)
+
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        sizer.Add(self.canvas, 1, wx.EXPAND)
+        self.SetSizer(sizer)
+
+class PlotNotebook(wx.Panel):
+    def __init__(self, parent, id=-1):
+        wx.Panel.__init__(self, parent, id=id)
+        self.nb = aui.AuiNotebook(self)
+        sizer = wx.BoxSizer()
+        sizer.Add(self.nb, 1, wx.EXPAND)
+        self.SetSizer(sizer)
+
+    def add(self, name="plot"):
+        page = Plot(self.nb)
+        self.nb.AddPage(page, name)
+        return page.figure
     
 class MainWindow(wx.Frame):
 
@@ -208,6 +233,10 @@ class MainWindow(wx.Frame):
             self.cfg.Write('ultrasonicPort', '')
             self.cfg.WriteBool('GPSConnected', False)
             self.cfg.Write('GPSPort', '')
+        self.variables=['NDRE','NDVI','Red-Edge','NIR','Red','Distance']
+        self.numReadings=0
+        self.lastRecord=[0]
+        self.axes=[]
         self.InitUI()
 
     def InitUI(self):
@@ -250,19 +279,22 @@ class MainWindow(wx.Frame):
         
         leftBox = wx.BoxSizer(wx.VERTICAL)
         st1 = wx.StaticText(backgroundPanel, label='Map:')
-        panel1 = wx.Panel(backgroundPanel)
-        panel1.SetBackgroundColour('#4f0000')
+        mapPanel=Plot(backgroundPanel)
+        self.mapAxes=mapPanel.figure.gca()
         st2 = wx.StaticText(backgroundPanel, label='Log:')
         self.logText = wx.TextCtrl(backgroundPanel, style=wx.TE_MULTILINE|wx.TE_READONLY)
         leftBox.Add(st1, proportion=0, flag=wx.ALL)
-        leftBox.Add(panel1, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
+        leftBox.Add(mapPanel, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
         leftBox.Add(st2, proportion=0, flag=wx.ALL)
         leftBox.Add(self.logText, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
         
         middleBox = wx.BoxSizer(wx.VERTICAL)
-        panel3 = wx.Panel(backgroundPanel)
-        panel3.SetBackgroundColour('#005000')
-        middleBox.Add(panel3, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
+        st3 = wx.StaticText(backgroundPanel, label='Plot:')
+        plotter = PlotNotebook(backgroundPanel)
+        for i in range(6):
+            self.axes.append(plotter.add(self.variables[i]).gca())    
+        middleBox.Add(st3, proportion=0, flag=wx.ALL)
+        middleBox.Add(plotter, proportion=7, flag=wx.EXPAND | wx.ALL, border=20)
         
         rightBox = wx.BoxSizer(wx.VERTICAL)
         panel4 = wx.Panel(backgroundPanel)
@@ -292,7 +324,13 @@ class MainWindow(wx.Frame):
         
         
     def OnNew(self, e):
-        self.logText.SetValue('')
+        confirmationDiag=wx.MessageDialog(None, 'Are you sure you want to clear log?', 'Question', wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
+        dialogFlag=confirmationDiag.ShowModal()
+        print(dialogFlag)
+        if(dialogFlag==wx.ID_YES):
+            self.logText.SetValue('')
+            self.numReadings=0
+        #confirmationDiag.Destroy()
     
     def OnSave(self, e):
         rootName='HHPLogFile'+datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d')+'X'
@@ -302,6 +340,7 @@ class MainWindow(wx.Frame):
         finalFilename=rootName+str(i)+'.txt'
         self.logText.SaveFile(finalFilename)
         self.logText.SetValue('')
+        self.numReadings=0
         
     def OnQuit(self, e):
         self.Close()
@@ -310,7 +349,7 @@ class MainWindow(wx.Frame):
         dial = wx.MessageBox(("HandHeld Plant Phenotyping \n"
                              "Made by Roberto Buelvas\n"
                              "McGill University, 2019\n"
-                             "Version 0.01\n"),
+                             "Version 0.02\n"),
                              'About', wx.OK | wx.ICON_INFORMATION)
         dial.Show()
     
@@ -335,9 +374,10 @@ class MainWindow(wx.Frame):
             
     def OnErase(self, e):
         if(self.logText.GetValue()!=''):
-            latestLineLength=self.logText.GetLineLength(self.logText.GetNumberOfLines()-2)
             lastPosition=self.logText.GetLastPosition()
-            self.logText.Remove(lastPosition-latestLineLength-2, lastPosition)
+            self.logText.Remove(self.lastRecord[-1], lastPosition)
+            if(len(self.lastRecord)>1):
+                del self.lastRecord[-1]
         
     def OnStop(self, e):
         self.rt.stop()
@@ -347,85 +387,81 @@ class MainWindow(wx.Frame):
         self.logText.AppendText('Hi, Roberto \n')
     
     def readAll(self):
-        if(self.cfg.ReadBool('multispectralConnected')):
-            mr=self.getMultispectralReading()
-            self.updateUI(mr)
-        if(self.cfg.ReadBool('ultrasonicConnected')):        
-            ur=self.getUltrasonicReading()
-            self.updateUI(ur)
-        if(self.cfg.ReadBool('GPSConnected')):        
-            gr=self.getGPSReading()
-            self.updateUI(gr)
-            #updateMap(gr)
+        connected=[self.cfg.ReadBool('multispectralConnected'),self.cfg.ReadBool('ultrasonicConnected'),self.cfg.ReadBool('GPSConnected')]
+        if(any(connected)):
+            self.lastRecord.append(self.logText.GetLastPosition())
+            self.logText.AppendText('*****'+str(self.numReadings)+'*****\n')
+            if(connected[0]):
+                mr=self.getMultispectralReading()
+                self.updateUI(mr)
+            if(connected[1]):        
+                ur=self.getUltrasonicReading()
+                self.updateUI(ur)
+            if(connected[2]):        
+                gr=self.getGPSReading()
+                self.updateUI(gr)
+                #updateMap(gr)
+            self.numReadings+=1
             
     def getMultispectralReading(self, numValues=10):
-        try:
-            serialCropCircle=serial.Serial(self.cfg.Read('multispectralPort'),38400)
-            red=[]
-            redEdge=[]
-            nir=[]
-            ndvi=[]
-            ndre=[]
-            for i in range(numValues):
-                message=serialCropCircle.readline().strip()
-                measurements=message.split(',')
-                measurements=[float(i) for i in measurements]
-                red+=measurements[0]
-                redEdge+=measurements[1]
-                nir+=measurements[2]
-                ndvi+=measurements[3]
-                ndre+=measurements[4]
-            finalMeasurement=[sum(red),sum(redEdge),sum(nir),sum(ndvi),sum(ndre)]
-            finalMeasurement=[i/numValues for i in finalMeasurement]            
-            return finalMeasurement
-        except Exception as e:
-            pass
-        finally:
-            serialCropCircle.close()
+        port=self.cfg.Read('multispectralPort')
+        print(port)
+        serialCropCircle=serial.Serial(port,38400)
+        ndre=[]
+        ndvi=[]
+        redEdge=[]
+        nir=[]
+        red=[]
+        for i in range(numValues):
+            message=serialCropCircle.readline().strip().decode()
+            measurements=message.split(',')
+            measurements=[float(i) for i in measurements]
+            ndre.append(measurements[0])
+            ndvi.append(measurements[1])
+            redEdge.append(measurements[2])
+            nir.append(measurements[3])
+            red.append(measurements[4])
+        finalMeasurement=[sum(ndre),sum(ndvi),sum(redEdge),sum(nir),sum(red)]
+        finalMeasurement=[i/numValues for i in finalMeasurement]            
+        serialCropCircle.close()
+        print(finalMeasurement)
+        return finalMeasurement
         
     def getUltrasonicReading(self, numValues=10):
-        try:
-            serialUltrasonic=serial.Serial(self.cfg.Read('ultrasonicPort'),38400)
-            count=-1
-            finalMeasurement=0
-            index=0
-            message=b''
-            charList=[b'0',b'0',b'0',b'0',b'0']
-            while(count<numValues):
-                newChar=serialUltrasonic.read()
-                if(newChar==b'\r'):
-                    count+=1
-                    message=b''.join(charList)
-                    measurement=0.003384*25.4*int(message)
-                    finalMeasurement+=measurement
-                    message=b''
+        serialUltrasonic=serial.Serial(self.cfg.Read('ultrasonicPort'),38400)
+        count=-1
+        finalMeasurement=0
+        index=0
+        message=b''
+        charList=[b'0',b'0',b'0',b'0',b'0']
+        while(count<numValues):
+            newChar=serialUltrasonic.read()
+            if(newChar==b'\r'):
+                count+=1
+                message=b''.join(charList)
+                measurement=0.003384*25.4*int(message)
+                finalMeasurement+=measurement
+                message=b''
+                index=0
+            else:
+                charList[index]=newChar
+                index+=1
+                if(index>5):
                     index=0
-                else:
-                    charList[index]=newChar
-                    index+=1
-                    if(index>5):
-                        index=0
-            return finalMeasurement/numValues            
-        except Exception as e:
-            pass
-        finally:
-            serialUltrasonic.close()
+        serialUltrasonic.close()
+        return finalMeasurement/numValues            
         
-    def getGPSReading(self, numValues=15):
-        try:
-            serialGPS=serial.Serial(self.cfg.Read('GPSPort'),9600)
-            i=0
-            while(i<10):
-                message=serialGPS.readline().strip().decode()
-                if(message[0:6]=='$GPGGA' or message[0:6]=='$GPGLL'):
-                    i+=1
-                    parsedMessage=pynmea2.parse(message)
-                    finalMeasurement=[parsedMessage.longitude, parsedMessage.latitude]
-            return finalMeasurement
-        except Exception as e:
-            pass
-        finally:
-            serialGPS.close()
+    def getGPSReading(self, numValues=5):
+        serialGPS=serial.Serial(self.cfg.Read('GPSPort'),9600)
+        i=0
+        while(i<numValues):
+            message=serialGPS.readline().strip().decode()
+            if(message[0:6]=='$GPGGA' or message[0:6]=='$GPGLL'):
+                i+=1
+                parsedMessage=pynmea2.parse(message)
+                finalMeasurement=[parsedMessage.longitude, parsedMessage.latitude]
+        serialGPS.close()
+        return finalMeasurement
         
     def updateUI(self, someValue):
         if(someValue!=None):
@@ -433,13 +469,15 @@ class MainWindow(wx.Frame):
             if(isinstance(someValue, list)):
                 if(len(someValue)>=5):
                     #cropCircle
-                    self.logText.AppendText('m;'+ts+';'+str(someValue)[1,-1]+'\n')
+                    self.logText.AppendText('m;'+ts+';'+str(someValue)[1:-1]+'\n')
+                    #for i in range(5):
+                        #self.axes[i].plot()
                 else:
                     #gps
-                    self.logText.AppendText('g;'+ts+';'+str(someValue)[1,-1]+'\n')
+                    self.logText.AppendText('g;'+ts+';'+str(someValue)[1:-1]+'\n')
             else:
                 #ultrasonic
-                self.logText.AppendText('m;'+ts+';'+str(someValue)+'\n')
+                self.logText.AppendText('u;'+ts+';'+str(someValue)+'\n')
         else:
             #None
             pass
