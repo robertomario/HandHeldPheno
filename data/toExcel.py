@@ -36,12 +36,12 @@ workbook = xlsxwriter.Workbook('test.xlsx')
 worksheet = workbook.add_worksheet()
 headers=('Longitude','Latitude','Plot','Variety','NDRE','NDVI','RedEdge','NIR','Red','Distance')
 worksheet.write_row(0, 0, headers)
-filenames=['HHPLogFile2019-07-05X'+str(i)+'.txt' for i in files]
+filenames=['HHPLogFile2019-07-25X'+str(i)+'.txt' for i in files]
 count=1
 for n, name in enumerate(filenames):
     with open(name, 'r') as file:
         aux=file.readlines()
-    if(len(aux)%3!=0):
+    if(len(aux)%4!=0):
         print('There was an issue with the mmg order')
     for row in aux:
         values=row.strip().split(';')[-1]
@@ -70,6 +70,7 @@ for n, name in enumerate(filenames):
             worksheet.write_string(count,3,varieties[str(plotIndex)])
             count+=1
         else:
-            worksheet.write(count,0,row.strip())
-            count+=1
+            #worksheet.write(count,0,row.strip())
+            #count+=1
+            pass
 workbook.close()
