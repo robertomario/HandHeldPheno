@@ -36,7 +36,7 @@ workbook = xlsxwriter.Workbook('test.xlsx')
 worksheet = workbook.add_worksheet()
 headers=('Longitude','Latitude','Plot','Variety','NDRE','NDVI','RedEdge','NIR','Red','Distance')
 worksheet.write_row(0, 0, headers)
-filenames=['HHPLogFile2019-07-25X'+str(i)+'.txt' for i in files]
+filenames=['HHPLogFile2019-08-20X'+str(i)+'.txt' for i in files]
 count=1
 for n, name in enumerate(filenames):
     with open(name, 'r') as file:
@@ -74,3 +74,4 @@ for n, name in enumerate(filenames):
             #count+=1
             pass
 workbook.close()
+print("Finished with ", n+1, " plots")
